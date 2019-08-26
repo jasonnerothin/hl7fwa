@@ -1,2 +1,11 @@
 *.class
 *.log
+
+**/.idea/*
+**/*.iml
+project/target
+project/project
+target
+.idea
+**/.DS_Store
+.idea/*
