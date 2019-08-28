@@ -1,11 +1,13 @@
 package com.epam
 
-import java.sql.{Connection, DriverManager, ResultSet}
+import java.sql.{Connection, DriverManager, ResultSet, Statement}
 import java.util.Properties
 
 import com.typesafe.config.{Config, ConfigFactory}
 import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord}
 import org.postgresql.Driver
+
+import scala.collection.mutable
 
 /**
   * Pipe test messages to Kafka and Postgres
@@ -65,7 +67,7 @@ object Feeder extends NapTime with Synonyms {
     val props = new Properties()
     props.setProperty("user", dbUser)
     props.setProperty("password", dbPassword)
-//    props.setProperty("ssl", "true")
+    //    props.setProperty("ssl", "true")
     classOf[org.postgresql.Driver]
     org.postgresql.Driver.isRegistered()
     DriverManager.getConnection(pgConnectionString(), props)
@@ -76,22 +78,22 @@ object Feeder extends NapTime with Synonyms {
     producer.send(record)
   }
 
-  def sendToPostgres(claim: ClaimRecord): Unit = {
-    val connection = pgConnection()
-    try {
-      val statement = connection.createStatement(ResultSet.CLOSE_CURSORS_AT_COMMIT, ResultSet.CONCUR_UPDATABLE)
-      val qry = s"INSERT INTO claims (id, patient_id, amount) VALUES (${claim.id}, ${claim.patientId}, ${claim.amount})"
-//      println(qry)
-      statement.executeUpdate(qry)
-    } finally {
-      connection.close()
-    }
-
+  def sendToPostgres(claim: ClaimRecord, statement: Statement): Unit = {
+    val qry = s"INSERT INTO claims (id, patient_id, amount) VALUES (${claim.id}, ${claim.patientId}, ${claim.amount})"
+    statement.addBatch(qry)
+    batchCounter = batchCounter + 1
+    if (batchCounter > 0 && batchCounter % batchSize == 0) statement.executeBatch()
   }
+
+  private val batchSize = 2048
+  private var batchCounter = 0
 
   def main(args: Array[String]): Unit = {
 
     var id = 0
+
+    val connection = pgConnection()
+    val statement = connection.createStatement(ResultSet.CLOSE_CURSORS_AT_COMMIT, ResultSet.CONCUR_UPDATABLE)
 
     while (true) {
 
@@ -105,13 +107,17 @@ object Feeder extends NapTime with Synonyms {
       // Potential problem #1 - drug prescribed twice under different drug names
       if (sometimeIsNow()) sendToKafka(makeRxeAlias(msg))
 
-      if (!sometimeIsNow()) sendToPostgres(record)
+      if (!sometimeIsNow()) sendToPostgres(record, statement)
       else // Potential problem #2 - claim is quite expensive...
-        sendToPostgres(ClaimRecord(record.id, record.patientId, record.amount * 32))
+        sendToPostgres(ClaimRecord(record.id, record.patientId, record.amount * 32), statement)
 
       zzz(64)
 
     }
+
+    statement.executeBatch()
+    statement.close()
+    connection.close()
 
   }
 
