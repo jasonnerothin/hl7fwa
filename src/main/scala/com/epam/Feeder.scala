@@ -14,19 +14,22 @@ import scala.collection.mutable
   */
 object Feeder extends NapTime with Synonyms {
 
-  private val rand = scala.util.Random
+  private val patientSeed = scala.util.Random
+  private val priceSeed = scala.util.Random
+  private val sometimeSeed = scala.util.Random
+  private val aliasSeed = scala.util.Random
 
   private val conf: Config = ConfigFactory.load()
 
   private val NUM_PATIENTS: Int = 2E20.toInt
-  private val DUPLICATE_FREQUENCY = 4096 // 2E10
+  private val DUPLICATE_FREQUENCY = 512
 
-  private def randomPatientId = rand.nextInt(NUM_PATIENTS) + 1
+  private def randomPatientId = patientSeed.nextInt(NUM_PATIENTS) + 1
 
   /**
     * @return a Float between 10 and 320, inclusive
     */
-  private def randomPrice: Float = ((rand.nextInt(32) + 1) * 10).toFloat
+  private def randomPrice: Float = ((priceSeed.nextInt(32) + 1) * 10).toFloat
 
   def makeHL7Message(patientId: String): String = {
     messageFormat.replaceAll("XXXXXX", patientId)
@@ -35,11 +38,11 @@ object Feeder extends NapTime with Synonyms {
   def makeRxeAlias(msg: String): String = {
     val synonyms: Set[String] = of(originalDrug).filter(_ != originalDrug)
     require(synonyms.nonEmpty, "Error finding synonym for " + originalDrug)
-    msg.replaceAll(originalDrug, synonyms.toList(rand.nextInt(synonyms.size)))
+    msg.replaceAll(originalDrug, synonyms.toList(aliasSeed.nextInt(synonyms.size)))
   }
 
   def sometimeIsNow(): Boolean = {
-    rand.nextInt(DUPLICATE_FREQUENCY) == 0
+    sometimeSeed.nextInt(DUPLICATE_FREQUENCY) == 0
   }
 
   private val producer: KafkaProducer[String, String] = initProducer()
@@ -78,9 +81,12 @@ object Feeder extends NapTime with Synonyms {
     producer.send(record)
   }
 
+  private val logFrequency = 100
+
   def sendToPostgres(claim: ClaimRecord, statement: Statement): Unit = {
     val qry = s"INSERT INTO claims (id, patient_id, amount) VALUES (${claim.id}, ${claim.patientId}, ${claim.amount})"
     statement.addBatch(qry)
+    if( claim.id % logFrequency == 0 ) println(s"Sending claim id [${claim.id}] to DB.")
     batchCounter = batchCounter + 1
     if (batchCounter > 0 && batchCounter % batchSize == 0) statement.executeBatch()
   }
@@ -108,8 +114,10 @@ object Feeder extends NapTime with Synonyms {
       if (sometimeIsNow()) sendToKafka(makeRxeAlias(msg))
 
       if (!sometimeIsNow()) sendToPostgres(record, statement)
-      else // Potential problem #2 - claim is quite expensive...
+      else { // Potential problem #2 - claim is quite expensive...
+        println(s"Big claim with id [${record.id}].")
         sendToPostgres(ClaimRecord(record.id, record.patientId, record.amount * 32), statement)
+      }
 
       zzz(64)
 
