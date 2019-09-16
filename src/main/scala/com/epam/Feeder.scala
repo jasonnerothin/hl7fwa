@@ -1,6 +1,6 @@
 package com.epam
 
-import java.sql.{Connection, DriverManager, ResultSet, Statement}
+import java.sql.{Connection, DriverManager, PreparedStatement, ResultSet, Statement}
 import java.util.Properties
 
 import com.typesafe.config.{Config, ConfigFactory}
@@ -12,7 +12,7 @@ import scala.collection.mutable
 /**
   * Pipe test messages to Kafka and Postgres
   */
-object Feeder extends NapTime with Synonyms {
+object Feeder extends NapTime with Synonyms with PgUrl {
 
   private val patientSeed = scala.util.Random
   private val priceSeed = scala.util.Random
@@ -50,18 +50,11 @@ object Feeder extends NapTime with Synonyms {
   private def initProducer(): KafkaProducer[String, String] = {
     val props = new Properties
     props.put("key.serializer", conf.getString("key.serializer"))
-    props.put("value.serializer", conf.getString("value.serializer"))
+    props.put("value.serializer", conf.getString("value.deserializer"))
     props.put("bootstrap.servers", conf.getString("bootstrap.servers"))
     props.put("kafka.producer.retries", conf.getString("kafka.producer.retries"))
     props.put("kafka.linger.ms", conf.getString("kafka.linger.ms"))
     new KafkaProducer[String, String](props)
-  }
-
-  private def pgConnectionString(): String = {
-    val host = conf.getString("postgres.host")
-    val port = conf.getString("postgres.port")
-    val dbName = conf.getString("postgres.dbname")
-    s"jdbc:postgresql://$host:$port/$dbName"
   }
 
   def pgConnection(): Connection = {
@@ -70,10 +63,9 @@ object Feeder extends NapTime with Synonyms {
     val props = new Properties()
     props.setProperty("user", dbUser)
     props.setProperty("password", dbPassword)
-    //    props.setProperty("ssl", "true")
     classOf[org.postgresql.Driver]
     org.postgresql.Driver.isRegistered()
-    DriverManager.getConnection(pgConnectionString(), props)
+    DriverManager.getConnection(pgConnectionString()(conf), props)
   }
 
   def sendToKafka(msg: String): Unit = {
@@ -85,8 +77,10 @@ object Feeder extends NapTime with Synonyms {
 
   def sendToPostgres(claim: ClaimRecord, statement: Statement): Unit = {
     val qry = s"INSERT INTO claims (id, patient_id, amount) VALUES (${claim.id}, ${claim.patientId}, ${claim.amount})"
+//    val foo: PreparedStatement = null
+//    foo.execute()
     statement.addBatch(qry)
-    if( claim.id % logFrequency == 0 ) println(s"Sending claim id [${claim.id}] to DB.")
+    if (claim.id % logFrequency == 0) println(s"Sending claim id [${claim.id}] to DB.")
     batchCounter = batchCounter + 1
     if (batchCounter > 0 && batchCounter % batchSize == 0) statement.executeBatch()
   }
@@ -131,7 +125,12 @@ object Feeder extends NapTime with Synonyms {
 
   private val originalDrug: String = "PROPRANOLOL"
 
-  private val messageFormat =
+  val messageFormat =
+    """|PID||XXXXXX|XXXXXX||PYXIS TEST PATIENT 2||
+       |RXE||(INDERAL)|40||MG|EACH|HOLD FOR SBP lg 90 |||1||||||||||||||"""
+
+
+  val bigMessageFormat =
     """|MSH|^~\&|CPSI_IF_FEED_OUT|Murphy Medical Center|||20091026120921||RDE|20091026120921|P|2.3||
        |EVN||2009102612092156|||KLS
        |PID||XXXXXX|XXXXXX||PYXIS^TEST^PATIENT 2||19240829|M||W|4130 US HWY 64E^^MURPHY^NC^0000028906|CHE|8288378161^^^^^0000000000|0000000
@@ -150,4 +149,10 @@ object Feeder extends NapTime with Synonyms {
        |RXR|^PO
        |NTE|||"""
 
+
+  """
+    |PID => PatientID
+    |RXE, RDE => Drug Records
+    |ADT => Admission, Discharge, T(ransfer?)
+  """.stripMargin
 }
