@@ -32,6 +32,7 @@ libraryDependencies += "org.scalacheck" %% "scalacheck" % "1.14.0" % Test withSo
 libraryDependencies += "org.apache.spark" %% "spark-sql-kafka-0-10" % "2.4.4"
 
 
+mainClass in Compile := Some("com.epam.Feeder")
 
 assemblyMergeStrategy in assembly := {
   case PathList("META-INF", xs @ _*) => MergeStrategy.discard
