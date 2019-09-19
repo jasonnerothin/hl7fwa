@@ -6,7 +6,11 @@ package com.epam
 trait Synonyms {
 
   private val inderal: Set[String] = Set("Inderal", "PROPRANOLOL", "Avlocardyl", "Betadren", "Bedranol")
-  private val syns: Set[(String, Set[String])] = inderal map { name => name -> inderal }
+  private val vicodin: Set[String] = Set("Vicodin", "Adol", "Hycet", "Lortab", "Lorcet", "Norco")
+  private val amoxicillin: Set[String] = Set("amoxicillin", "penicillin", "ampicillin", "erythromycin", "streptomycin", "sulfonamide", "tetracycline")
+  private val syns: Set[(String, Set[String])] = {inderal map { name => name -> inderal }} ++
+    {vicodin map { name => name -> vicodin }} ++
+    {amoxicillin map { name => name -> amoxicillin }}
 
   /**
     * @param name a drug name
@@ -19,6 +23,10 @@ trait Synonyms {
       case Some(x) => x._2
       case None => Set(name)
     }
+  }
+
+  def getAllDrugNames: Set[String] = {
+    inderal ++ vicodin ++ amoxicillin
   }
 
 }
