@@ -1,5 +1,4 @@
-package com.epam
-
+package com.epam.helper
 import com.typesafe.config.Config
 
 /**

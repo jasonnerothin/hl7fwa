@@ -2,7 +2,8 @@ package com.epam.jobs
 
 import java.io.File
 
-import com.epam.{NapTime, PgUrl}
+import com.epam.NapTime
+import com.epam.helper.PgUrl
 import com.typesafe.config.{Config, ConfigFactory}
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
@@ -23,7 +24,7 @@ object SuspiciousClaims extends PgUrl with NapTime {
 
     import spark.sqlContext.implicits._
     classOf[org.postgresql.Driver]
-    org.postgresql.Driver.isRegistered() // postgres driver bug
+    org.postgresql.Driver.isRegistered// postgres driver bug
 
     val jdbcDF = spark.read.format("jdbc")
       .option("url", pgConnectionString()(conf))

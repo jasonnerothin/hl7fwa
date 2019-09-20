@@ -1,15 +1,14 @@
 package com.epam
 
-import java.sql.{Connection, DriverManager, ResultSet, Statement}
-import java.util.Properties
+import java.sql.ResultSet
 
+import com.epam.helper.{KafkaHelper, PostgreSQLHelper}
 import com.typesafe.config.{Config, ConfigFactory}
-import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord}
 
 /**
   * Pipe test messages to Kafka and Postgres
   */
-object Feeder extends NapTime with Synonyms with PgUrl {
+object Feeder extends NapTime with Synonyms {
 
   private val patientSeed = scala.util.Random
   //private val priceSeed = scala.util.Random
@@ -19,9 +18,6 @@ object Feeder extends NapTime with Synonyms with PgUrl {
 
   private var loadToKafka: Boolean = false
   private var loadToDB: Boolean = false
-
-
-  private val conf: Config = ConfigFactory.load()
 
   private val NUM_PATIENTS: Int = 2E20.toInt
   private val DUPLICATE_FREQUENCY = 512
@@ -54,57 +50,10 @@ object Feeder extends NapTime with Synonyms with PgUrl {
     sometimeSeed.nextInt(DUPLICATE_FREQUENCY) == 0
   }
 
-  private val producer: KafkaProducer[String, String] = initProducer()
-
-  private def initProducer(): KafkaProducer[String, String] = {
-    val props = new Properties
-    props.put("key.serializer", conf.getString("key.serializer"))
-    props.put("value.serializer", conf.getString("value.deserializer"))
-    props.put("bootstrap.servers", conf.getString("bootstrap.servers"))
-    props.put("kafka.producer.retries", conf.getString("kafka.producer.retries"))
-    props.put("kafka.linger.ms", conf.getString("kafka.linger.ms"))
-    new KafkaProducer[String, String](props)
-  }
-
-  def pgConnection(): Connection = {
-    val dbUser = conf.getString("postgres.dbuser")
-    val dbPassword = conf.getString("postgres.password")
-    val props = new Properties()
-    props.setProperty("user", dbUser)
-    props.setProperty("password", dbPassword)
-    classOf[org.postgresql.Driver]
-    org.postgresql.Driver.isRegistered
-    DriverManager.getConnection(pgConnectionString()(conf), props)
-  }
-
-  def sendToKafka(msg: String): Unit = {
-    val record = new ProducerRecord[String, String](conf.getString("kafka.topic"), "key", msg)
-    producer.send(record)
-  }
-
-  private val logFrequency = 100
-
-  def sendToPostgres(claim: ClaimRecord, statement: Statement): Unit = {
-    val qry = s"INSERT INTO claims (id, patient_id, amount) VALUES (${claim.id}, ${claim.patientId}, ${claim.amount})"
-    //    val foo: PreparedStatement = null
-    //    foo.execute()
-    statement.addBatch(qry)
-    if (claim.id % logFrequency == 0) println(s"Sending claim id [${claim.id}] to DB.")
-    batchCounter = batchCounter + 1
-    if (batchCounter > 0 && batchCounter % batchSize == 0) statement.executeBatch()
-  }
-
-  private val batchSize = 2048
-  private var batchCounter = 0
-
   def main(args: Array[String]): Unit = {
 
-    if (args.length < 2) {
-      print("please provide 2 arguments where first is one of the following: k, kd, d and second is an int")
-      return
-    }
-    if (BigInt(args(1)) >= Int.MaxValue) {
-      print("please provide a smaller amount")
+    if (args.length < 8) {
+      print("please provide 8 arguments:\n k/d/kd kafkaServers kafkaTopic postgresHost postgresPort postgresDBname postgresDbuser postgresPassword")
       return
     }
     if (args(0) != "k" && args(0) != "d" && args(0) != "kd") {
@@ -112,45 +61,58 @@ object Feeder extends NapTime with Synonyms with PgUrl {
       return
     }
 
+    val kafkaServers = args(1)
+    val kafkaTopic = args(2)
+    val kafkaHelper: KafkaHelper = new KafkaHelper(kafkaServers, kafkaTopic)
+
+
+    val postgresHost = args(3)
+    val postgresPort = args(4)
+    val postgresDBname = args(5)
+    val postgresDbuser = args(6)
+    val postgresPassword = args(7)
+    val postgreSQLHelper = new PostgreSQLHelper(postgresHost, postgresPort, postgresDBname, postgresDbuser, postgresPassword)
+
+
     var id = 0
 
     if (args(0).contains('k')) loadToKafka = true
     if (args(0).contains('d')) loadToDB = true
 
-    val amount = args(1).toInt
-
-    val connection = pgConnection()
+    val connection = postgreSQLHelper.connection
     val statement = connection.createStatement(ResultSet.CLOSE_CURSORS_AT_COMMIT, ResultSet.CONCUR_UPDATABLE)
 
-    while (id < amount) {
+    print(loadToKafka)
+    print(loadToDB)
+    while (true) {
 
       id = id + 1
 
       originalDrug = getRandomDrug
 
       val pttId = randomPatientId
+
       val msg = makeHL7Message("%07d".format(pttId), originalDrug)
       val record = ClaimRecord(id, pttId, stablePrice)
-
       if (loadToKafka) {
-        sendToKafka(msg)
+        kafkaHelper.sendToKafka(msg)
 
         //Potential problem #1 - drug prescribed twice under different drug names
         if (timeToCreateFraud()) {
-          sendToKafka(makeRxeAlias(msg))
+          kafkaHelper.sendToKafka(makeRxeAlias(msg))
           println("sent to kafka")
         }
       }
 
       if (loadToDB) {
-        if (!timeToCreateFraud()) sendToPostgres(record, statement)
+        if (!timeToCreateFraud()) postgreSQLHelper.sendToPostgres(record, statement)
         else { // Potential problem #2 - claim is quite expensive...
           println(s"Big claim with id [${record.id}].")
-          sendToPostgres(ClaimRecord(record.id, record.patientId, record.amount * 32), statement)
+          postgreSQLHelper.sendToPostgres(ClaimRecord(record.id, record.patientId, record.amount * 32), statement)
         }
       }
 
-      zzz(2)
+      zzz(2000)
 
     }
 
