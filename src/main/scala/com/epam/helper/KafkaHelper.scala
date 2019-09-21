@@ -6,15 +6,15 @@ import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord}
 
 class KafkaHelper(bootstrapServers: String, kafkaTopic: String) {
 
-  val keySerializer = "org.apache.kafka.common.serialization.StringSerializer"
-  val valueSerializer = "org.apache.kafka.common.serialization.StringSerializer"
-  val valueDeserializer = "org.apache.kafka.common.serialization.StringSerializer"
+  val keySerializer:String = "org.apache.kafka.common.serialization.StringSerializer"
+  val valueSerializer:String = "org.apache.kafka.common.serialization.StringSerializer"
+  val valueDeserializer:String = "org.apache.kafka.common.serialization.StringSerializer"
 
   //val bootstrapServers:String="localhost:9092"
   //val kafkaTopic:String="MyPreciousTopic2"
-  val kafkaProducerRetries = 3
-  val kafkaLingerMs = 3
-  val kafkaCompressionType = "snappy"
+  val kafkaProducerRetries:String = "3"
+  val kafkaLingerMs:String = "3"
+  val kafkaCompressionType:String = "snappy"
 
   val props = new Properties
   props.put("key.serializer", keySerializer)
@@ -27,7 +27,6 @@ class KafkaHelper(bootstrapServers: String, kafkaTopic: String) {
 
 
   def sendToKafka(msg: String): Unit = {
-    print("in loading")
     val record = new ProducerRecord[String, String](kafkaTopic, "key", msg)
     producer.send(record)
   }
