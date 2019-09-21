@@ -82,6 +82,8 @@ object Feeder extends NapTime with Synonyms {
     val connection = postgreSQLHelper.connection
     val statement = connection.createStatement(ResultSet.CLOSE_CURSORS_AT_COMMIT, ResultSet.CONCUR_UPDATABLE)
 
+    print(loadToKafka)
+    print(loadToDB)
     while (true) {
 
       id = id + 1
