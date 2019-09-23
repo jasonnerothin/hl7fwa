@@ -1,6 +1,6 @@
 package com.epam
 
-import java.sql.ResultSet
+import java.sql.{Connection, ResultSet, Statement}
 
 import com.epam.helper.{KafkaHelper, PostgreSQLHelper}
 import com.typesafe.config.{Config, ConfigFactory}
@@ -79,9 +79,13 @@ object Feeder extends NapTime with Synonyms {
     if (args(0).contains('k')) loadToKafka = true
     if (args(0).contains('d')) loadToDB = true
 
-    val connection = postgreSQLHelper.connection
-    val statement = connection.createStatement(ResultSet.CLOSE_CURSORS_AT_COMMIT, ResultSet.CONCUR_UPDATABLE)
+    var connection: Connection = null
+    var statement: Statement = null
 
+    if (loadToDB) {
+      connection = postgreSQLHelper.connection
+      statement = connection.createStatement(ResultSet.CLOSE_CURSORS_AT_COMMIT, ResultSet.CONCUR_UPDATABLE)
+    }
     while (true) {
 
       id = id + 1
@@ -113,10 +117,12 @@ object Feeder extends NapTime with Synonyms {
       zzz(2000)
 
     }
+    if (loadToDB) {
+      statement.executeBatch()
 
-    statement.executeBatch()
-    statement.close()
-    connection.close()
+      statement.close()
+      connection.close()
+    }
 
   }
 
